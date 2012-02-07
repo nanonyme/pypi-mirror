@@ -368,7 +368,7 @@ class Package(object):
         """ link is a tuple of url, md5_hex
         """
         return self._get(*link)
-
+        
     def content_length(self, link):
 
         # First try to determine the content-length through
@@ -486,15 +486,15 @@ class Mirror(object):
                 continue
 
             try:
-                        = package.ls(filename_matches, external_links, 
-                                        follow_external_index_pages)
+                downloadables = package.ls(filename_matches, external_links, 
+                    follow_external_index_pages)
             except PackageError, v:
                 stats.error_404(package_name)
                 LOG.debug("Package not available: %s" % v)
                 continue
 
-            mirror_package = self.package(package_name)
-            for url_basename, url_data in downloadable.items():
+            mirror_package = self.package(package)
+            for url_basename, url_data in downloadables.items():
                 md5_hash = url_data.get("md5sum", "")
                 for url in url_data["links"]:
                     try:
@@ -504,7 +504,8 @@ class Mirror(object):
                         LOG.info("Invalid URL: %s" % v)
                         continue                                
                     # if we have a md5 check hash and continue if fine.
-                    if md5_hash and mirror_package.md5_match(url_basename, md5_hash):
+                    if mirror_package.is_valid(url_basename=url_basename,
+                        md5_hash=md5_hash, url=url):
                         stats.found(filename)
                         full_list.append(mirror_package._html_link(base_url, 
                                                                 url_basename, 
@@ -512,17 +513,7 @@ class Mirror(object):
                         if verbose: 
                             LOG.debug("Found: %s" % filename)
                         break
-                
-                    # if we don't have a md5, check for the filesize, if available
-                    # and continue if it's the same:
-                    if not md5_hash:
-                        remote_size = package.content_length(url)
-                        if mirror_package.size_match(url_basename, remote_size):
-                            if verbose: 
-                                LOG.debug("Found: %s" % url_basename)
-                            full_list.append(mirror_package._html_link(base_url, url_basename, md5_hash))
-                            break
-                
+                         
                     # we need to download it
                     try:
                         data = package.get((url, filename, md5_hash))
@@ -537,11 +528,13 @@ class Mirror(object):
                         if verbose:
                             LOG.debug(str(v))
                     else:
-                        stats.stored(filename)
-                        full_list.append(mirror_package._html_link(base_url, filename, md5_hash))
-                        if verbose:
-                            LOG.debug("Stored: %s [%d kB]" % (filename, len(data)//1024))
-                        break
+                        if mirror_package.is_valid(url_basename=url_basename,
+                            md5_hash=md5_hash, url=url):
+                            stats.stored(filename)
+                            full_list.append(mirror_package._html_link(base_url, filename, md5_hash))
+                            if verbose:
+                                LOG.debug("Stored: %s [%d kB]" % (filename, len(data)//1024))
+                            break
 # Disabled cleanup for now since it does not deal with the changelog() implementation
 #            if cleanup:
 #                mirror_package.cleanup(links, verbose)
@@ -611,8 +604,9 @@ class Mirror(object):
 class MirrorPackage(object):
     """ This checks for already existing files and creates the index
     """
-    def __init__(self, mirror, package_name):
-        self.package_name = package_name
+    def __init__(self, mirror, package):
+        self.package = package
+        self.package_name = package.name
         self.mirror = mirror
         self.mkdir()
 
@@ -628,6 +622,16 @@ class MirrorPackage(object):
             return os.path.join(self.mirror.base_path, self.package_name)
         return os.path.join(self.mirror.base_path, self.package_name, filename)
 
+    def is_valid(self, url_basename, md5_hash=None, url=None):
+        if md5_hash and self.md5_match(url_basename, md5_hash):
+            return True
+        if not md5_hash:
+            remote_size = self.package.content_length(url)
+            if self.size_match(url_basename, remote_size):
+                return True
+        return False
+
+        
     def md5_match(self, filename, md5):
         file = MirrorFile(self, filename)
         return file.md5 == md5
@@ -717,10 +721,12 @@ class MirrorFile(object):
     def md5(self):
         # use cached md5 sum if available.
         if os.path.exists(self.md5_filename):
-            return open(self.md5_filename,"r").read()
+            with open(self.md5_filename,"r") as f:
+                return f.read()
 
         if os.path.exists(self.path):
-            return md5(open(self.path, "rb").read()).hexdigest()
+            with open(self.path, "rb") as f:
+                return md5(f.read()).hexdigest()
         return None
 
     @property
