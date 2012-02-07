@@ -29,6 +29,9 @@ from BeautifulSoup import BeautifulSoup
 from glob import fnmatch
 from logger import getLogger
 import HTMLParser
+from gzip import GzipFile
+from bz import BZ2File
+from zipfile import is_zipfile
 try: 
    from hashlib import md5
 except ImportError:
@@ -344,8 +347,6 @@ class Package(object):
             if md5_hex != data_md5:
                 raise PackageError("MD5 sum does not match: %s / %s on package %s" % 
                                    (md5_hex, data_md5, url))
-        else:
-            LOG.warn("Can't validate package %s due to missing md5sum" % url)
         return data
 
     def get(self, link):
@@ -433,7 +434,8 @@ class Mirror(object):
 
     def index_html(self):
         content = self._index_html()
-        open(os.path.join(self.base_path, "index.html"), "wb").write(content)
+        with open(os.path.join(self.base_path, "index.html"), "wb") as f:
+            f.write(content)
 
     def full_html(self, full_list):
         header = "<html><head><title>PyPI Mirror</title></head><body>"  
@@ -513,7 +515,12 @@ class Mirror(object):
                     LOG.info("Invalid URL: %s" % v)
                     continue
                                        
-                mirror_package.write(filename, data, md5_hash)
+                try:
+                    mirror_package.write(filename, data, md5_hash)
+                except PackageError, v:
+                    if verbose:
+                        LOG.debug(str(v))
+                    continue
                 stats.stored(filename)
                 full_list.append(mirror_package._html_link(base_url, filename, md5_hash))
                 if verbose:
@@ -616,8 +623,27 @@ class MirrorPackage(object):
         self.mkdir()
         file = MirrorFile(self, filename)
         file.write(data)
+        
         if hash:
             file.write_md5(hash)
+        else:
+            if filename.endswith(".zip"):
+                if not is_zipfile(filename):
+                    raise PackageError("%s is not a zipfile" % filename)
+            elif filename.endswith(".tbz") or filename.endswith("bz2"):
+                try:
+                    b = BZ2File(filename)
+                    b.read()
+                except IOError:
+                    raise PackageError("%s is not a bzip2 file")
+                finally:
+                    b.close()
+            elif filename.endswith(".tgz") or filename.endswith(".gz"):
+                try:
+                    with GzipFile(filename) as g:
+                        g.read()
+                except IOError:
+                    raise PackageError("%s is not a gzip file")
 
     def rm(self, filename):
         MirrorFile(self, filename).rm()
@@ -687,7 +713,8 @@ class MirrorFile(object):
         return 0
 
     def write(self, data):
-        open(self.path, "wb").write(data)
+        with open(self.path, "wb") as f:
+            f.write(data)
 
     def rm(self):
         """ deletes the file
@@ -700,7 +727,8 @@ class MirrorFile(object):
     def write_md5(self, hash):
         md5_filename = ".%s.md5" % os.path.basename(self.path)
         md5_path = os.path.dirname(self.path)
-        open(os.path.join(md5_path, md5_filename),"w").write(hash)
+        with open(os.path.join(md5_path, md5_filename),"w") as f:
+            f.write(hash)
 
     @property
     def md5_filename(self):
