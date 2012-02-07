@@ -317,7 +317,7 @@ class Package(object):
                             follow_external_index_pages=follow_external_index_pages)
         return [(link[0], os.path.basename(link[0]), link[1]) for link in links]
 
-    def _get(self, url, filename, md5_hex=None):
+    def _get(self, url, filename, md5_hex=True):
         """ fetches a file and checks for the md5_hex if given
         """
 
