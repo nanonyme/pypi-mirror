@@ -320,8 +320,9 @@ class Package(object):
                             follow_external_index_pages=follow_external_index_pages)
         results = dict()
         for link, md5sum in links:
-            filename = os.path.basename(link)
-            result = results.get(filename, dict())
+            name, _, _ = os.path.basename(link).partition("-")
+            name = os.path.basename(link)
+            result = results.get(name, dict())
             if "links" not in result:
                 result["links"] = []
             if "md5sum" not in result:
@@ -332,7 +333,7 @@ class Package(object):
                 elif result["md5sum"] != md5sum:
                     continue 
             result["links"].append(link)
-            results[filename] = result
+            results[name] = result
         return results
 
     def _get(self, url, filename, md5_hex=None):
@@ -494,9 +495,10 @@ class Mirror(object):
                 continue
 
             mirror_package = self.package(package)
-            for url_basename, url_data in downloadables.items():
+            for _, url_data in downloadables.items():
                 md5_hash = url_data.get("md5sum", "")
                 for url in url_data["links"]:
+                    url_basename = os.path.basename(url)
                     try:
                         filename = self._extract_filename(url)
                     except PackageError, v:
