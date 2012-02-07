@@ -317,7 +317,7 @@ class Package(object):
                             follow_external_index_pages=follow_external_index_pages)
         return [(link[0], os.path.basename(link[0]), link[1]) for link in links]
 
-    def _get(self, url, filename, md5_hex=True):
+    def _get(self, url, filename, md5_hex=None):
         """ fetches a file and checks for the md5_hex if given
         """
 
@@ -344,6 +344,8 @@ class Package(object):
             if md5_hex != data_md5:
                 raise PackageError("MD5 sum does not match: %s / %s on package %s" % 
                                    (md5_hex, data_md5, url))
+        else:
+            LOG.warn("Can't validate package %s due to missing md5sum" % url)
         return data
 
     def get(self, link):
