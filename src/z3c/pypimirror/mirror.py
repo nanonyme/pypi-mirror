@@ -318,7 +318,18 @@ class Package(object):
         links = self._links(filename_matches=filename_matches, 
                             external_links=external_links, 
                             follow_external_index_pages=follow_external_index_pages)
-        return [(link[0], os.path.basename(link[0]), link[1]) for link in links]
+        results = dict()
+        for link, md5sum in links:
+            filename = os.path.basename(link)
+            result = results.get(filename, dict())
+            if "links" not in result:
+                result["links"] = []
+            if "md5sum" not in result:
+                result["md5sum"] = None
+            if md5sum and result["md5sum"] == md5sum:
+                result["links"].append(link)
+            results[filename] = result
+        return result
 
     def _get(self, url, filename, md5_hex=None):
         """ fetches a file and checks for the md5_hex if given
@@ -471,60 +482,62 @@ class Mirror(object):
                 continue
 
             try:
-                links = package.ls(filename_matches, external_links, 
-                                   follow_external_index_pages)
+                downloadable = package.ls(filename_matches, external_links, 
+                                        follow_external_index_pages)
             except PackageError, v:
                 stats.error_404(package_name)
                 LOG.debug("Package not available: %s" % v)
                 continue
 
             mirror_package = self.package(package_name)
-            links.sort(key=lambda item : 0 if item[2] else 1) 
-            for (url, url_basename, md5_hash) in links:
-                try:
-                    filename = self._extract_filename(url)
-                except PackageError, v:
-                    stats.error_invalid_url((url, url_basename, md5_hash))
-                    LOG.info("Invalid URL: %s" % v)
-                    continue                                
-                # if we have a md5 check hash and continue if fine.
-                if md5_hash and mirror_package.md5_match(url_basename, md5_hash):
-                    stats.found(filename)
-                    full_list.append(mirror_package._html_link(base_url, 
-                                                               url_basename, 
-                                                               md5_hash))
+            for url_basename, url_data in downloadable.items():
+                md5_hash = url_data.get("md5sum", "")
+                for url in url_data["links"]:
+                    try:
+                        filename = self._extract_filename(url)
+                    except PackageError, v:
+                        stats.error_invalid_url((url, url_basename, md5_hash))
+                        LOG.info("Invalid URL: %s" % v)
+                        continue                                
+                    # if we have a md5 check hash and continue if fine.
+                    if md5_hash and mirror_package.md5_match(url_basename, md5_hash):
+                        stats.found(filename)
+                        full_list.append(mirror_package._html_link(base_url, 
+                                                                url_basename, 
+                                                                md5_hash))
                     if verbose: 
                         LOG.debug("Found: %s" % filename)
-                    continue
+                    break
                 
-                # if we don't have a md5, check for the filesize, if available
-                # and continue if it's the same:
-                if not md5_hash:
-                    remote_size = package.content_length(url)
-                    if mirror_package.size_match(url_basename, remote_size):
-                        if verbose: 
-                            LOG.debug("Found: %s" % url_basename)
-                        full_list.append(mirror_package._html_link(base_url, url_basename, md5_hash))
+                    # if we don't have a md5, check for the filesize, if available
+                    # and continue if it's the same:
+                    if not md5_hash:
+                        remote_size = package.content_length(url)
+                        if mirror_package.size_match(url_basename, remote_size):
+                            if verbose: 
+                                LOG.debug("Found: %s" % url_basename)
+                            full_list.append(mirror_package._html_link(base_url, url_basename, md5_hash))
+                            break
+                
+                    # we need to download it
+                    try:
+                        data = package.get((url, filename, md5_hash))
+                    except PackageError, v:
+                        stats.error_invalid_url((url, url_basename, md5_hash))
+                        LOG.info("Invalid URL: %s" % v)
                         continue
-                
-                # we need to download it
-                try:
-                    data = package.get((url, filename, md5_hash))
-                except PackageError, v:
-                    stats.error_invalid_url((url, url_basename, md5_hash))
-                    LOG.info("Invalid URL: %s" % v)
-                    continue
                                        
-                try:
-                    mirror_package.write(filename, data, md5_hash)
-                except PackageError, v:
-                    if verbose:
-                        LOG.debug(str(v))
-                    continue
-                stats.stored(filename)
-                full_list.append(mirror_package._html_link(base_url, filename, md5_hash))
-                if verbose:
-                    LOG.debug("Stored: %s [%d kB]" % (filename, len(data)//1024))
+                    try:
+                        mirror_package.write(filename, data, md5_hash)
+                    except PackageError, v:
+                        if verbose:
+                            LOG.debug(str(v))
+                    else:
+                        stats.stored(filename)
+                        full_list.append(mirror_package._html_link(base_url, filename, md5_hash))
+                        if verbose:
+                            LOG.debug("Stored: %s [%d kB]" % (filename, len(data)//1024))
+                        break
 # Disabled cleanup for now since it does not deal with the changelog() implementation
 #            if cleanup:
 #                mirror_package.cleanup(links, verbose)
