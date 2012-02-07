@@ -486,7 +486,7 @@ class Mirror(object):
                 continue
 
             try:
-                downloadable = package.ls(filename_matches, external_links, 
+                        = package.ls(filename_matches, external_links, 
                                         follow_external_index_pages)
             except PackageError, v:
                 stats.error_404(package_name)
@@ -509,9 +509,9 @@ class Mirror(object):
                         full_list.append(mirror_package._html_link(base_url, 
                                                                 url_basename, 
                                                                 md5_hash))
-                    if verbose: 
-                        LOG.debug("Found: %s" % filename)
-                    break
+                        if verbose: 
+                            LOG.debug("Found: %s" % filename)
+                        break
                 
                     # if we don't have a md5, check for the filesize, if available
                     # and continue if it's the same:
