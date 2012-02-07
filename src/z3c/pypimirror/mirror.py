@@ -330,10 +330,10 @@ class Package(object):
                 if not result["md5sum"]:
                     result["md5sum"] = md5sum
                 elif result["md5sum"] != md5sum:
-                    continue
+                    continue 
             result["links"].append(link)
             results[filename] = result
-        return result
+        return results
 
     def _get(self, url, filename, md5_hex=None):
         """ fetches a file and checks for the md5_hex if given
