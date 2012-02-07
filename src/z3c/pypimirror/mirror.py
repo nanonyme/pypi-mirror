@@ -135,7 +135,7 @@ class PypiPackageList(object):
 
 class PackageError(Exception):
     pass
-
+   
 class Package(object):
     """
         This handles the list of versions and fetches the
@@ -447,7 +447,7 @@ class Mirror(object):
         fp.write("<br />\n".join(full_list))
         fp.write(footer)
         fp.close()
-
+        
     def mirror(self, 
                package_list, 
                filename_matches, 
@@ -479,7 +479,7 @@ class Mirror(object):
                 continue
 
             mirror_package = self.package(package_name)
-
+            links.sort(key=lambda item : 0 if item[2] else 1) 
             for (url, url_basename, md5_hash) in links:
                 try:
                     filename = self._extract_filename(url)
