@@ -326,8 +326,12 @@ class Package(object):
                 result["links"] = []
             if "md5sum" not in result:
                 result["md5sum"] = None
-            if md5sum and result["md5sum"] == md5sum:
-                result["links"].append(link)
+            if md5sum:
+                if not result["md5sum"]:
+                    result["md5sum"] = md5sum
+                elif result["md5sum"] != md5sum:
+                    continue
+            result["links"].append(link)
             results[filename] = result
         return result
 
