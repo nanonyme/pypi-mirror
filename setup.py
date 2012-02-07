@@ -33,7 +33,7 @@ setup(
     zip_safe=False,
     install_requires = ['setuptools',
                         'zc.lockfile',
-                        'BeautifulSoup<=3.0.9999'],
+                        'BeautifulSoup'],
     extras_require = {
         'test': [ 'zc.buildout',  
                   'zope.testing',
