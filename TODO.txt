@@ -1,0 +1,5 @@
+- implement a parallel package fetcher using 'processing':
+  http://pyprocessing.berlios.de/doc/pool-objects.html
+
+- implement a blacklist for unreachable or broken external
+  links

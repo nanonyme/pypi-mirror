@@ -1,0 +1,3 @@
+include *.txt
+recursive-include src *.txt *.py *.zcml *.sample
+include docs/*.txt
