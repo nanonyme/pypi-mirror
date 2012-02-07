@@ -462,57 +462,45 @@ class Mirror(object):
         fp.write("<br />\n".join(full_list))
         fp.write(footer)
         fp.close()
-        
-    def mirror(self, 
-               package_list, 
-               filename_matches, 
-               verbose, 
-               cleanup, 
-               create_indexes, 
-               external_links, 
-               follow_external_index_pages, 
-               base_url):
-        stats = Stats()
-        full_list = []
-        for package_name in package_list:
 
-            LOG.debug('Processing package %s' % package_name)
+    def _fetch_package(self, filename_matches, verbose, cleanup,
+                       create_indexes, external_links,
+                       follow_external_index_pages, base_url,
+                       package_name, stats, full_list):
+        try:
+            package = Package(package_name)
+        except PackageError, v:
+            stats.error_invalid_package(package_name)
+            LOG.debug("Package is not valid.")
+            return False
 
-            try:
-                package = Package(package_name)
-            except PackageError, v:
-                stats.error_invalid_package(package_name)
-                LOG.debug("Package is not valid.")
-                continue
+        try:
+            downloadables = package.ls(filename_matches, external_links, 
+                                       follow_external_index_pages)
+        except PackageError, v:
+            stats.error_404(package_name)
+            LOG.debug("Package not available: %s" % v)
+            return False
 
-            try:
-                downloadables = package.ls(filename_matches, external_links, 
-                    follow_external_index_pages)
-            except PackageError, v:
-                stats.error_404(package_name)
-                LOG.debug("Package not available: %s" % v)
-                continue
-
-            mirror_package = self.package(package)
-            for url_basename, url_data in downloadables.items():
-                md5_hash = url_data.get("md5sum", "")
-                for url in url_data["links"]:
-                    try:
-                        filename = self._extract_filename(url)
-                    except PackageError, v:
-                        stats.error_invalid_url((url, url_basename, md5_hash))
-                        LOG.info("Invalid URL: %s" % v)
-                        continue                                
-                    # if we have a md5 check hash and continue if fine.
-                    if mirror_package.is_valid(url_basename=url_basename,
-                        md5_hash=md5_hash, url=url):
-                        stats.found(filename)
-                        full_list.append(mirror_package._html_link(base_url, 
-                                                                url_basename, 
-                                                                md5_hash))
-                        if verbose: 
-                            LOG.debug("Found: %s" % filename)
-                        break
+        mirror_package = self.package(package)
+        for url_basename, url_data in downloadables.items():
+            md5_hash = url_data.get("md5sum", "")
+            for url in url_data["links"]:
+                try:
+                    filename = self._extract_filename(url)
+                except PackageError, v:
+                    stats.error_invalid_url((url, url_basename, md5_hash))
+                    LOG.info("Invalid URL: %s" % v)
+                    continue                                
+                if mirror_package.is_valid(url_basename=url_basename,
+                                           md5_hash=md5_hash, url=url):
+                    stats.found(filename)
+                    full_list.append(mirror_package._html_link(base_url, 
+                                                               url_basename, 
+                                                               md5_hash))
+                    if verbose: 
+                        LOG.debug("Found: %s" % filename)
+                    return False
                          
                     # we need to download it
                     try:
@@ -535,13 +523,25 @@ class Mirror(object):
                             if verbose:
                                 LOG.debug("Stored: %s [%d kB]" % (filename, len(data)//1024))
                             break
-# Disabled cleanup for now since it does not deal with the changelog() implementation
-#            if cleanup:
-#                mirror_package.cleanup(links, verbose)
             if create_indexes:
                 mirror_package.index_html(base_url)
-#        if cleanup:
-#            self.cleanup(package_list, verbose)
+        
+    def mirror(self, 
+               package_list, 
+               filename_matches, 
+               verbose, 
+               cleanup, 
+               create_indexes, 
+               external_links, 
+               follow_external_index_pages, 
+               base_url):
+        stats = Stats()
+        full_list = []
+        for package_name in package_list:   
+            LOG.debug('Starting to process package %s' % package_name)
+            self._fetch_package(filename_matches, verbose, cleanup, create_indexes,
+                                external_links, follow_external_index_pages, base_url,
+                                package_name, stats, full_list)
         if create_indexes:
             self.index_html()
             full_list.sort()
