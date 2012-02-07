@@ -30,7 +30,7 @@ from glob import fnmatch
 from logger import getLogger
 import HTMLParser
 from gzip import GzipFile
-from bz import BZ2File
+from bz2 import BZ2File
 from zipfile import is_zipfile
 try: 
    from hashlib import md5
