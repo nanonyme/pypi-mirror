@@ -36,6 +36,7 @@ try:
    from hashlib import md5
 except ImportError:
    from md5 import md5
+from eventlet.greenpool import GreenPool
 
 # timeout in seconds
 timeout = 10
@@ -500,21 +501,20 @@ class Mirror(object):
                                                                md5_hash))
                     if verbose: 
                         LOG.debug("Found: %s" % filename)
-                    return False
+                    continue
                          
                     # we need to download it
-                    try:
-                        data = package.get((url, filename, md5_hash))
-                    except PackageError, v:
-                        stats.error_invalid_url((url, url_basename, md5_hash))
-                        LOG.info("Invalid URL: %s" % v)
-                        continue
-                                       
-                    try:
-                        mirror_package.write(filename, data, md5_hash)
-                    except PackageError, v:
-                        if verbose:
-                            LOG.debug(str(v))
+                try:
+                    data = package.get((url, filename, md5_hash))
+                except PackageError, v:
+                    stats.error_invalid_url((url, url_basename, md5_hash))
+                    LOG.info("Invalid URL: %s" % v)
+                    continue
+                try:
+                    mirror_package.write(filename, data, md5_hash)
+                except PackageError, v:
+                    if verbose:
+                        LOG.debug(str(v))
                     else:
                         if mirror_package.is_valid(url_basename=url_basename,
                             md5_hash=md5_hash, url=url):
@@ -522,7 +522,6 @@ class Mirror(object):
                             full_list.append(mirror_package._html_link(base_url, filename, md5_hash))
                             if verbose:
                                 LOG.debug("Stored: %s [%d kB]" % (filename, len(data)//1024))
-                            break
             if create_indexes:
                 mirror_package.index_html(base_url)
         
@@ -537,11 +536,13 @@ class Mirror(object):
                base_url):
         stats = Stats()
         full_list = []
-        for package_name in package_list:   
+        pool = GreenPool()
+        for package_name in package_list:
             LOG.debug('Starting to process package %s' % package_name)
-            self._fetch_package(filename_matches, verbose, cleanup, create_indexes,
-                                external_links, follow_external_index_pages, base_url,
-                                package_name, stats, full_list)
+            pool.spawn_n(self._fetch_package, filename_matches, verbose, cleanup, create_indexes,
+                         external_links, follow_external_index_pages, base_url,
+                         package_name, stats, full_list)
+        pool.waitall()
         if create_indexes:
             self.index_html()
             full_list.sort()
