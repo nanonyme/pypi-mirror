@@ -630,7 +630,7 @@ class MirrorPackage(object):
             if filename.endswith(".zip"):
                 if not is_zipfile(filename):
                     raise PackageError("%s is not a zipfile" % filename)
-            elif filename.endswith(".tbz") or filename.endswith("bz2"):
+            elif filename.endswith(".tbz2") or filename.endswith(".bz2"):
                 try:
                     b = BZ2File(filename)
                     b.read()
