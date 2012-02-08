@@ -125,7 +125,7 @@ class PypiPackageList(object):
            package_path = os.path.join(base_path, package)
            timestamp_path = os.path.join(package_path, "timestamp")
            if package not in changed.keys():
-              if os.path.exists(package_path):
+              if os.path.exists(timestamp_path):
                  packages.discard(package)
            else:
               new_timestamp = changed[package]
@@ -546,11 +546,11 @@ class Mirror(object):
                         full_list.append(mirror_package._html_link(base_url, filename, md5_hash))
                         if verbose:
                             LOG.debug("Stored: %s [%d kB]" % (filename, len(data)//1024))
+                        with open(mirror_package.path("timestamp"), "wb") as f:
+                            timestamp, _, _ = str(time.time()).partition(".")
+                            f.write(timestamp)
             if create_indexes:
                 mirror_package.index_html(base_url)
-            with open(mirror_package.path("timestamp"), "wb") as f:
-                timestamp, _, _ = str(time.time()).partition(".")
-                f.write(timestamp)
         
     def mirror(self, 
                package_list, 
