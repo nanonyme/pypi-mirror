@@ -37,6 +37,7 @@ try:
 except ImportError:
    from md5 import md5
 from eventlet.greenpool import GreenPool
+from random import shuffle
 
 # timeout in seconds
 timeout = 10
@@ -142,7 +143,12 @@ class Package(object):
         This handles the list of versions and fetches the
         files
     """
-    def __init__(self, package_name, pypi_base_url="http://pypi.python.org/simple"):
+    def __init__(self, package_name, pypi_base_url=["http://pypi.python.org/simple",
+                                                    "http://b.pypi.python.org/simple",
+                                                    "http://c.pypi.python.org/simple",
+                                                    "http://d.pypi.python.org/simple",
+                                                    "http://e.pypi.python.org/simple",
+                                                    "http://f.pypi.python.org/simple"]):
         self._links_cache = None
 
         if not util.isASCII(package_name):
@@ -163,20 +169,25 @@ class Package(object):
                 filename = urllib.quote(filename)
             except KeyError:
                 raise PackageError("%s is not a valid filename." % filename)
-        url = "%s/%s" % (self._pypi_base_url, self.name)
-        if filename:
-            url = "%s/%s" % (url, filename)
-        return url
+        urls = self._pypi_base_url[:]
+        shuffle(urls)
+        for pypi_base_url in urls:
+            url = "%s/%s" % (pypi_base_url, self.name)
+            if filename:
+                url = "%s/%s/" % (url, filename)
+            yield url
 
-    def _fetch_index(self):
+    def _fetch_index(self, url=None):
+        if not url:
+            url = self.url()
         try:
-            html = urlopen(self.url()).read()
+            html = urlopen(url).read()
         except urllib2.HTTPError, v:
             if '404' in str(v):             # sigh
-                raise PackageError("Package not available (404): %s" % self.url())
-            raise PackageError("Package not available (unknown reason): %s" % self.url())
+                raise PackageError("Package not available (404): %s" % url)
+            raise PackageError("Package not available (unknown reason): %s" % url)
         except urllib2.URLError, v:
-            raise PackageError("URL Error: %s " % self.url())
+            raise PackageError("URL Error: %s " % url)
         except Exception, e:
             raise PackageError('Generic error: %s' % e)
         return html
@@ -278,7 +289,16 @@ class Package(object):
         """ This is an iterator which returns useful links on files for
             mirroring
         """
-        remote_index_html = self._fetch_index()
+        for url in self.url():
+            try:
+                remote_index_html = self._fetch_index(url)
+            except PackageError as e:
+                pass
+            else:
+                e = None
+                break
+        if e:
+            raise e
         for link in self._fetch_links(remote_index_html):
             # then handle "normal" packages in pypi.
             (url, hash) = urllib.splittag(link)
