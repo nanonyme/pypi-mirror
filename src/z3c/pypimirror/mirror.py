@@ -515,13 +515,13 @@ class Mirror(object):
                 except PackageError, v:
                     if verbose:
                         LOG.debug(str(v))
-                    else:
-                        if mirror_package.is_valid(url_basename=url_basename,
-                            md5_hash=md5_hash, url=url):
-                            stats.stored(filename)
-                            full_list.append(mirror_package._html_link(base_url, filename, md5_hash))
-                            if verbose:
-                                LOG.debug("Stored: %s [%d kB]" % (filename, len(data)//1024))
+                else:
+                    if mirror_package.is_valid(url_basename=url_basename,
+                        md5_hash=md5_hash, url=url):
+                        stats.stored(filename)
+                        full_list.append(mirror_package._html_link(base_url, filename, md5_hash))
+                        if verbose:
+                            LOG.debug("Stored: %s [%d kB]" % (filename, len(data)//1024))
             if create_indexes:
                 mirror_package.index_html(base_url)
         
