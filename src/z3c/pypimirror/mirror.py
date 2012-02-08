@@ -132,10 +132,17 @@ class PypiPackageList(object):
               if os.path.exists(os.path.join(package_path, "timestamp")):
                  with open(timestamp_path, "rb") as f:
                     timestamp = int(f.read().rstrip())
-                    if new_timestamp - timestamp <= fetch_since_days*24*3600:
+                    if new_timestamp > timestamp :
                        packages.discard(package)
                        continue
-        return packages
+        ret = dict()
+        for package in packages:
+           timestamp = changed.get(package, None)
+           if not timestamp:
+              timestamp, _, _ = str(time.time()).partition(".")
+              timestamp = int(timestamp)
+           ret[package] = timestamp
+        return ret
 
 
 class PackageError(Exception):
@@ -490,7 +497,7 @@ class Mirror(object):
     def _fetch_package(self, filename_matches, verbose, cleanup,
                        create_indexes, external_links,
                        follow_external_index_pages, base_url,
-                       package_name, stats, full_list):
+                       package_name, stats, full_list, timestamp):
         try:
             package = Package(package_name)
         except PackageError, v:
@@ -507,6 +514,7 @@ class Mirror(object):
             return False
 
         mirror_package = self.package(package)
+        successes = 0
         for url_basename, url_data in downloadables.items():
             md5_hash = url_data.get("md5sum", "")
             for url in url_data["links"]:
@@ -517,7 +525,7 @@ class Mirror(object):
                     LOG.info("Invalid URL: %s" % v)
                     continue                                
                 if mirror_package.is_valid(url_basename=url_basename,
-                                           md5_hash=md5_hash, url=url):
+                                           md5_hash=md5_hash):
                     stats.found(filename)
                     full_list.append(mirror_package._html_link(base_url, 
                                                                url_basename, 
@@ -540,17 +548,17 @@ class Mirror(object):
                         LOG.debug(str(v))
                     mirror_package.rm(filename)
                 else:
-                    if mirror_package.is_valid(url_basename=url_basename,
-                        md5_hash=md5_hash, url=url):
-                        stats.stored(filename)
-                        full_list.append(mirror_package._html_link(base_url, filename, md5_hash))
-                        if verbose:
-                            LOG.debug("Stored: %s [%d kB]" % (filename, len(data)//1024))
-                        with open(mirror_package.path("timestamp"), "wb") as f:
-                            timestamp, _, _ = str(time.time()).partition(".")
-                            f.write(timestamp)
-            if create_indexes:
-                mirror_package.index_html(base_url)
+                   stats.stored(filename)
+                   full_list.append(mirror_package._html_link(base_url, filename, md5_hash))
+                   if verbose:
+                      LOG.debug("Stored: %s [%d kB]" % (filename, len(data)//1024))
+                   successes += 1
+                   break
+        if successes == len(downloadables.keys()):
+            with open(mirror_package.path("timestamp"), "wb") as f:
+                f.write(str(timestamp))
+        if create_indexes:
+            mirror_package.index_html(base_url)
         
     def mirror(self, 
                package_list, 
@@ -564,11 +572,11 @@ class Mirror(object):
         stats = Stats()
         full_list = []
         pool = GreenPool()
-        for package_name in package_list:
+        for package_name, timestamp in package_list.items():
             LOG.debug('Starting to process package %s' % package_name)
             pool.spawn_n(self._fetch_package, filename_matches, verbose, cleanup, create_indexes,
                          external_links, follow_external_index_pages, base_url,
-                         package_name, stats, full_list)
+                         package_name, stats, full_list, timestamp)
         pool.waitall()
         if create_indexes:
             self.index_html()
@@ -650,9 +658,7 @@ class MirrorPackage(object):
             return os.path.join(self.mirror.base_path, self.package_name)
         return os.path.join(self.mirror.base_path, self.package_name, filename)
 
-    def is_valid(self, url_basename, md5_hash=None, url=None):
-        if not md5_hash:
-            md5_hash = MirrorFile(self, url_basename).md5
+    def is_valid(self, url_basename, md5_hash):
         if md5_hash and self.md5_match(url_basename, md5_hash):
             return True
         return False
@@ -889,7 +895,6 @@ def run(args=None):
     else: 
         raise ValueError('To update mirror use --update ')
 
-    package_list = set(package_list)
     mirror = Mirror(config["mirror_file_path"])
     lock = zc.lockfile.LockFile(os.path.join(config["mirror_file_path"], config["lock_file_name"]))
     LOG = getLogger(filename=log_filename,
