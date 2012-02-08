@@ -113,26 +113,17 @@ class PypiPackageList(object):
     def __init__(self, pypi_xmlrpc_url='http://pypi.python.org/pypi'):
         self._pypi_xmlrpc_url = pypi_xmlrpc_url
 
-    def list(self, filter_by=None, incremental=False, fetch_since_days=7):
+    def list(self, base_path, filter_by=None, fetch_since_days=7):
         server = xmlrpclib.Server(self._pypi_xmlrpc_url)
-        packages = server.list_packages()
-        if not filter_by:
-            return packages
-
-        filtered_packages = []
-        for package in packages:
-            if not True in [fnmatch.fnmatch(package, f) for f in filter_by]:
-                continue
-            filtered_packages.append(package)
-
-        if incremental:
-            changelog = server.changelog(int(time.time() - fetch_since_days*24*3600))
-            changed_packages = [tp[0] for tp in changelog 
-                                if 'file' in tp[3]]
-            changed_packages = [package for package in changed_packages if package in filtered_packages]
-            return changed_packages
-        else:
-            return filtered_packages
+        packages = set(server.list_packages())
+        changelog = server.changelog(int(time.time() - fetch_since_days*24*3600))
+        changed = set(tp[0] for tp in changelog if "file" in tp[3])
+        for package in list(packages):
+           if not True in [fnmatch.fnmatch(package, f) for f in filter_by]:
+              packages.discard(package)
+           elif package not in changed and os.path.exists(os.path.join(base_path, package)):
+              packages.discard(package)
+        return packages
 
 
 class PackageError(Exception):
@@ -843,10 +834,8 @@ def run(args=None):
                       default=False, help='verbose on')
     parser.add_option('-f', '--log-filename', dest='log_filename', action='store',
                       default=False, help='Name of logfile')
-    parser.add_option('-I', '--initial-fetch', dest='initial_fetch', action='store_true',
-                      default=False, help='Initial PyPI mirror fetch')
-    parser.add_option('-U', '--update-fetch', dest='update_fetch', action='store_true',
-                      default=False, help='Perform incremental update of the mirror')
+    parser.add_option('-u', '--update', dest='update', action='store_true',
+                      default=False, help='PyPI mirror fetch')
     parser.add_option('-c', '--log-console', dest='log_console', action='store_true',
                       default=False, help='Also log to console')
     parser.add_option('-i', '--indexes-only', dest='indexes_only', action='store_true',
@@ -878,13 +867,12 @@ def run(args=None):
     if options.log_filename:
         log_filename = options.log_filename
 
-    if options.initial_fetch:
-        package_list = PypiPackageList().list(package_matches, incremental=False)
-    elif options.update_fetch:
-        package_list = PypiPackageList().list(package_matches, incremental=True,
-                                              fetch_since_days=fetch_since_days)
+    if options.update:
+       package_list = PypiPackageList().list(base_path=config["mirror_file_path"],
+                                             filter_by=package_matches,
+                                             fetch_since_days=fetch_since_days)
     else: 
-        raise ValueError('You must either specify the --initial-fetch or --update-fetch option ')
+        raise ValueError('To update mirror use --update ')
 
     package_list = set(package_list)
     mirror = Mirror(config["mirror_file_path"])
