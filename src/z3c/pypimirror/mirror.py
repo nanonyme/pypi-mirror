@@ -624,12 +624,10 @@ class MirrorPackage(object):
         return os.path.join(self.mirror.base_path, self.package_name, filename)
 
     def is_valid(self, url_basename, md5_hash=None, url=None):
+        if not md5_hash:
+            md5_hash = MirrorFile(self, url_basename).md5
         if md5_hash and self.md5_match(url_basename, md5_hash):
             return True
-        if not md5_hash:
-            remote_size = self.package.content_length(url)
-            if self.size_match(url_basename, remote_size):
-                return True
         return False
 
         
@@ -645,7 +643,6 @@ class MirrorPackage(object):
         self.mkdir()
         file = MirrorFile(self, filename)
         file.write(data)
-        
         if hash:
             file.write_md5(hash)
         else:
@@ -666,6 +663,7 @@ class MirrorPackage(object):
                         g.read()
                 except IOError:
                     raise PackageError("%s is not a gzip file")
+            file.write_md5(file.md5)
 
     def rm(self, filename):
         MirrorFile(self, filename).rm()
