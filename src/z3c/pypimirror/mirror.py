@@ -1,4 +1,4 @@
-################################################################
+###############################################################
 # z3c.pypimirror - A PyPI mirroring solution
 # Written by Daniel Kraft, Josip Delic, Gottfried Ganssauge and
 # Andreas Jung
@@ -117,12 +117,24 @@ class PypiPackageList(object):
         server = xmlrpclib.Server(self._pypi_xmlrpc_url)
         packages = set(server.list_packages())
         changelog = server.changelog(int(time.time() - fetch_since_days*24*3600))
-        changed = set(tp[0] for tp in changelog if "file" in tp[3])
+        changed = dict([(tp[0], tp[2]) for tp in changelog if "file" in tp[3]])
         for package in list(packages):
            if not True in [fnmatch.fnmatch(package, f) for f in filter_by]:
               packages.discard(package)
-           elif package not in changed and os.path.exists(os.path.join(base_path, package)):
-              packages.discard(package)
+              continue
+           package_path = os.path.join(base_path, package)
+           timestamp_path = os.path.join(package_path, "timestamp")
+           if package not in changed.keys():
+              if os.path.exists(package_path):
+                 packages.discard(package)
+           else:
+              new_timestamp = changed[package]
+              if os.path.exists(os.path.join(package_path, "timestamp")):
+                 with open(timestamp_path, "rb") as f:
+                    timestamp = int(f.read().rstrip())
+                    if new_timestamp - timestamp <= fetch_since_days*24*3600:
+                       packages.discard(package)
+                       continue
         return packages
 
 
@@ -536,6 +548,9 @@ class Mirror(object):
                             LOG.debug("Stored: %s [%d kB]" % (filename, len(data)//1024))
             if create_indexes:
                 mirror_package.index_html(base_url)
+            with open(mirror_package.path("timestamp"), "wb") as f:
+                timestamp, _, _ = str(time.time()).partition(".")
+                f.write(timestamp)
         
     def mirror(self, 
                package_list, 
