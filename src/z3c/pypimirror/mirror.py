@@ -511,10 +511,11 @@ class Mirror(object):
                     LOG.info("Invalid URL: %s" % v)
                     continue
                 try:
-                    mirror_package.write(filename, data, md5_hash)
+                    mirror_package.write_package(filename, data, md5_hash, url)
                 except PackageError, v:
                     if verbose:
                         LOG.debug(str(v))
+                    mirror_package.rm(filename)
                 else:
                     if mirror_package.is_valid(url_basename=url_basename,
                         md5_hash=md5_hash, url=url):
@@ -639,13 +640,23 @@ class MirrorPackage(object):
         file = MirrorFile(self, filename)
         return file.size == size
 
-    def write(self, filename, data, hash=""):
+    def write(self, filename, data):
+        self.mkdir()
+        file = MirrorFile(self, filename)
+        file.write(data)
+
+    def write_package(self, filename, data, hash="", url=""):
         self.mkdir()
         file = MirrorFile(self, filename)
         file.write(data)
         if hash:
             file.write_md5(hash)
         else:
+            if not url:
+                raise PackageError("%s had no hash or url, won't generate md5sum")
+            remote_size = self.package.content_length(url)
+            if file.size !=  remote_size:
+                raise PackageError("%s is wrong size" % filename)
             if filename.endswith(".zip"):
                 if not is_zipfile(filename):
                     raise PackageError("%s is not a zipfile" % filename)
