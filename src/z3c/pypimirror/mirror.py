@@ -113,7 +113,7 @@ class PypiPackageList(object):
     def __init__(self, pypi_xmlrpc_url='http://pypi.python.org/pypi'):
         self._pypi_xmlrpc_url = pypi_xmlrpc_url
 
-    def list(self, base_path, filter_by=None, fetch_since_days=7):
+    def list(self, base_path, stats, filter_by=None, fetch_since_days=7):
         server = xmlrpclib.Server(self._pypi_xmlrpc_url)
         packages = set(server.list_packages())
         changelog = server.changelog(int(time.time() - fetch_since_days*24*3600))
@@ -127,6 +127,7 @@ class PypiPackageList(object):
            if package not in changed.keys():
               if os.path.exists(timestamp_path):
                  packages.discard(package)
+                 stats.found(package)
            else:
               new_timestamp = changed[package]
               if os.path.exists(os.path.join(package_path, "timestamp")):
@@ -134,6 +135,7 @@ class PypiPackageList(object):
                     timestamp = int(f.read().rstrip())
                     if new_timestamp > timestamp :
                        packages.discard(package)
+                       stats.found(package)
                        continue
         ret = dict()
         for package in packages:
@@ -568,8 +570,7 @@ class Mirror(object):
                create_indexes, 
                external_links, 
                follow_external_index_pages, 
-               base_url):
-        stats = Stats()
+               base_url, stats):
         full_list = []
         pool = GreenPool()
         for package_name, timestamp in package_list.items():
@@ -889,9 +890,9 @@ def run(args=None):
     fetch_since_days = int(config.get("fetch_since_days", 0) or options.fetch_since_days)
     if options.log_filename:
         log_filename = options.log_filename
-
+    stats = Stats()
     if options.update:
-       package_list = PypiPackageList().list(base_path=config["mirror_file_path"],
+       package_list = PypiPackageList().list(base_path=config["mirror_file_path"], stats=stats,
                                              filter_by=package_matches,
                                              fetch_since_days=fetch_since_days)
     else: 
@@ -912,7 +913,7 @@ def run(args=None):
                       create_indexes, 
                       external_links, 
                       follow_external_index_pages,
-                      config["base_url"])
+                      config["base_url"], stats)
 
 if __name__ == '__main__':
     sys.exit(run())
