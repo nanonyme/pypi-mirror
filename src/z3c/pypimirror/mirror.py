@@ -694,16 +694,20 @@ class MirrorPackage(object):
                     raise PackageError("%s is not a zipfile" % filename)
             elif filename.endswith(".tbz2") or filename.endswith(".bz2"):
                 try:
-                    with BZ2File(file.path) as b:
-                       b.read()
+                    b = BZ2File(file.path)
+                    b.read()
                 except IOError:
                     raise PackageError("%s is not a bzip2 file" % filename)
+                else:
+                   b.close()
             elif filename.endswith(".tgz") or filename.endswith(".gz"):
                 try:
-                    with GzipFile(file.path) as g:
-                        g.read()
+                    g = GzipFile(file.path)
+                    g.read()
                 except IOError:
                     raise PackageError("%s is not a gzip file" % filename)
+                else:
+                   g.close()
             file.write_md5(file.md5)
 
     def rm(self, filename):
