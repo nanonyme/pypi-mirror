@@ -690,17 +690,17 @@ class MirrorPackage(object):
             if file.size !=  remote_size:
                 raise PackageError("%s is wrong size" % filename)
             if filename.endswith(".zip"):
-                if not is_zipfile(filename):
+                if not is_zipfile(file.path):
                     raise PackageError("%s is not a zipfile" % filename)
             elif filename.endswith(".tbz2") or filename.endswith(".bz2"):
                 try:
-                    with BZ2File(filename) as b:
+                    with BZ2File(file.path) as b:
                        b.read()
                 except IOError:
                     raise PackageError("%s is not a bzip2 file" % filename)
             elif filename.endswith(".tgz") or filename.endswith(".gz"):
                 try:
-                    with GzipFile(filename) as g:
+                    with GzipFile(file.path) as g:
                         g.read()
                 except IOError:
                     raise PackageError("%s is not a gzip file" % filename)
