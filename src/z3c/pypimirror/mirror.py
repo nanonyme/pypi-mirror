@@ -115,7 +115,20 @@ class PypiPackageList(object):
 
     def list(self, base_path, stats, filter_by=None, fetch_since_days=7):
         server = xmlrpclib.Server(self._pypi_xmlrpc_url)
-        packages = set(server.list_packages())
+        if filter_by:
+           package_rules = set()
+           for filter_rule in filter_by:
+              for splitted in filter_rule.split("*"):
+                 while splitted:
+                    single_rule, _, splitted = splitted.partition("?")
+                    if splitted:
+                       package_rules.add(single_rule)
+                       package_rules.add(single_rule[:-1])
+                    else:
+                       package_rules.add(single_rule)
+           packages = set([item['name'] for item in server.search({'name':list(package_rules)})])
+        else:
+           packages = set(server.list_packages())
         changelog = server.changelog(int(time.time() - fetch_since_days*24*3600))
         changed = dict([(tp[0], tp[2]) for tp in changelog if "file" in tp[3]])
         for package in list(packages):
