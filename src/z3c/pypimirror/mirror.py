@@ -16,7 +16,7 @@ import util
 import shutil
 import httplib
 import urllib 
-from eventlet.green import urllib2
+import urllib2
 import time
 import datetime
 import ConfigParser
