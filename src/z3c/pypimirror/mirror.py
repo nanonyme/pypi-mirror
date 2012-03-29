@@ -6,7 +6,8 @@
 # Published under the Zope Public License 2.1
 ################################################################
 
-
+from eventlet import monkey_patch
+monkey_patch()
 import re
 import os
 import xmlrpclib
@@ -110,11 +111,27 @@ class PypiPackageList(object):
     """
         This fetches and represents a package list
     """
-    def __init__(self, pypi_xmlrpc_url='http://pypi.python.org/pypi'):
-        self._pypi_xmlrpc_url = pypi_xmlrpc_url
+    def __init__(self, pypi_xmlrpc_urls=['http://pypi.python.org/pypi',
+                                         'http://b.pypi.python.org/pypi',
+                                         'http://c.pypi.python.org/pypi',
+                                         'http://d.pypi.python.org/pypi',
+                                         'http://e.pypi.python.org/pypi',
+                                         'http://f.pypi.python.org/pypi']):
+        self._pypi_xmlrpc_urls = pypi_xmlrpc_urls
 
-    def list(self, base_path, stats, filter_by=None, fetch_since_days=7):
-        server = xmlrpclib.Server(self._pypi_xmlrpc_url)
+    def list(self, *args, **kwargs):
+       for url in self._pypi_xmlrpc_urls:
+          try:
+             return self._list(url, *args, **kwargs)
+          except socket.timeout, e:
+             pass
+          except xmlrpclib.ProtocolError, e:
+             print "%u does not support XMLRPC!" % url
+             pass
+       raise e
+
+    def _list(self, pypi_xmlrpc_url, base_path, stats, filter_by=None, fetch_since_days=7):
+        server = xmlrpclib.Server(pypi_xmlrpc_url)
         if filter_by:
            package_rules = set()
            for filter_rule in filter_by:
