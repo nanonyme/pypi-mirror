@@ -588,9 +588,9 @@ class Mirror(object):
                follow_external_index_pages, 
                base_url, stats):
         full_list = []
-        pool = GreenPool()
+        pool = GreenPool(100)
         downloadables_pile = GreenPile(pool)
-        results_pile = GreenPile(pool)
+        results = []
         for package_name, timestamp in package_list.items():
            try:
               package = Package(package_name)
@@ -607,28 +607,33 @@ class Mirror(object):
            except StopIteration:
               break
            else:
-              if downloadables == []:
+              if downloadables == {}:
                  pass
               else:
+                 results_pile = GreenPile(pool)
                  mirror_package = self.package(package)
+                 downloadables_len = 0
                  for url_basename, url_data in downloadables.items():
+                    downloadables_len += 1
                     results_pile.spawn(self._fetch_downloadable, package, mirror_package,
                                        url_basename, url_data, verbose, cleanup, create_indexes,
                                        base_url, package_name, stats, full_list, timestamp)
-                 successes = 0
-                 while 1:
-                    try:
-                       successes += results_pile.next()
-                    except StopIteration:
-                       break
-                 if successes == len(downloadables.keys()):
-                    with open(mirror_package.path("timestamp"), "wb") as f:
-                       f.write(str(timestamp))
-                 if create_indexes:
-                    mirror_package.index_html(base_url)
-                       
-                 
+                 results.append((mirror_package,results_pile, base_url, downloadables_len))
         pool.waitall()
+        for mirror_package, results_pile, base_url, downloadables_len in results:
+           successes = 0
+           LOG.debug('Finishing up %s' % mirror_package.package_name)
+           while 1:
+              try:
+                 successes += results_pile.next()
+              except StopIteration:
+                 break
+           if successes == downloadables_len:
+              with open(mirror_package.path("timestamp"), "wb") as f:
+                 f.write(str(timestamp))
+              if create_indexes:
+                 mirror_package.index_html(base_url)
+
         if create_indexes:
             self.index_html()
             full_list.sort()
