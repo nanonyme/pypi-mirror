@@ -37,7 +37,7 @@ try:
    from hashlib import md5
 except ImportError:
    from md5 import md5
-from eventlet.greenpool import GreenPool
+from eventlet.greenpool import GreenPool, GreenPile
 from random import shuffle
 
 # timeout in seconds
@@ -526,71 +526,57 @@ class Mirror(object):
         fp.write(footer)
         fp.close()
 
-    def _fetch_package(self, filename_matches, verbose, cleanup,
-                       create_indexes, external_links,
-                       follow_external_index_pages, base_url,
-                       package_name, stats, full_list, timestamp):
-        try:
-            package = Package(package_name)
-        except PackageError, v:
-            stats.error_invalid_package(package_name)
-            LOG.debug("Package is not valid.")
-            return False
+    def _get_metadata(self, package, filename_matches, external_links,
+                      follow_external_index_pages, stats):
+       try:
+          return (package, package.ls(filename_matches, external_links, 
+                                      follow_external_index_pages))
+       except PackageError, v:
+          stats.error_404(package.package_name)
+          LOG.debug("Package not available: %s" % v)
 
-        try:
-            downloadables = package.ls(filename_matches, external_links, 
-                                       follow_external_index_pages)
-        except PackageError, v:
-            stats.error_404(package_name)
-            LOG.debug("Package not available: %s" % v)
-            return False
 
-        mirror_package = self.package(package)
-        successes = 0
-        for url_basename, url_data in downloadables.items():
-            md5_hash = url_data.get("md5sum", "")
-            for url in url_data["links"]:
-                try:
-                    filename = self._extract_filename(url)
-                except PackageError, v:
-                    stats.error_invalid_url((url, url_basename, md5_hash))
-                    LOG.info("Invalid URL: %s" % v)
-                    continue                                
-                if mirror_package.is_valid(url_basename=url_basename,
-                                           md5_hash=md5_hash):
-                    stats.found(filename)
-                    full_list.append(mirror_package._html_link(base_url, 
-                                                               url_basename, 
-                                                               md5_hash))
-                    if verbose: 
-                        LOG.debug("Found: %s" % filename)
-                    continue
+    def _fetch_downloadable(self, package, mirror_package, url_basename, url_data, verbose, cleanup,
+                       create_indexes, base_url, package_name, stats, full_list, timestamp):
+
+        md5_hash = url_data.get("md5sum", "")
+        for url in url_data["links"]:
+           try:
+              filename = self._extract_filename(url)
+           except PackageError, v:
+              stats.error_invalid_url((url, url_basename, md5_hash))
+              LOG.info("Invalid URL: %s" % v)
+              continue                                
+           if mirror_package.is_valid(url_basename=url_basename,
+                                      md5_hash=md5_hash):
+              stats.found(filename)
+              full_list.append(mirror_package._html_link(base_url, 
+                                                         url_basename, 
+                                                         md5_hash))
+              if verbose: 
+                 LOG.debug("Found: %s" % filename)
+                 return 1
                          
-                    # we need to download it
-                try:
-                    data = package.get((url, filename, md5_hash))
-                except PackageError, v:
-                    stats.error_invalid_url((url, url_basename, md5_hash))
-                    LOG.info("Invalid URL: %s" % v)
-                    continue
-                try:
-                    mirror_package.write_package(filename, data, md5_hash, url)
-                except PackageError, v:
-                    if verbose:
-                        LOG.debug(str(v))
-                    mirror_package.rm(filename)
-                else:
-                   stats.stored(filename)
-                   full_list.append(mirror_package._html_link(base_url, filename, md5_hash))
-                   if verbose:
-                      LOG.debug("Stored: %s [%d kB]" % (filename, len(data)//1024))
-                   successes += 1
-                   break
-        if successes == len(downloadables.keys()):
-            with open(mirror_package.path("timestamp"), "wb") as f:
-                f.write(str(timestamp))
-        if create_indexes:
-            mirror_package.index_html(base_url)
+           # we need to download it
+           try:
+              data = package.get((url, filename, md5_hash))
+           except PackageError, v:
+              stats.error_invalid_url((url, url_basename, md5_hash))
+              LOG.info("Invalid URL: %s" % v)
+              continue
+           try:
+              mirror_package.write_package(filename, data, md5_hash, url)
+           except PackageError, v:
+              if verbose:
+                 LOG.debug(str(v))
+              mirror_package.rm(filename)
+           else:
+              stats.stored(filename)
+              full_list.append(mirror_package._html_link(base_url, filename, md5_hash))
+              if verbose:
+                 LOG.debug("Stored: %s [%d kB]" % (filename, len(data)//1024))
+                 return 1
+        return 0
         
     def mirror(self, 
                package_list, 
@@ -603,11 +589,45 @@ class Mirror(object):
                base_url, stats):
         full_list = []
         pool = GreenPool()
+        downloadables_pile = GreenPile(pool)
+        results_pile = GreenPile(pool)
         for package_name, timestamp in package_list.items():
-            LOG.debug('Starting to process package %s' % package_name)
-            pool.spawn_n(self._fetch_package, filename_matches, verbose, cleanup, create_indexes,
-                         external_links, follow_external_index_pages, base_url,
-                         package_name, stats, full_list, timestamp)
+           try:
+              package = Package(package_name)
+           except PackageError, v:
+              stats.error_invalid_package(package_name)
+              LOG.debug("Package is not valid %s" % v)
+           else:  
+              LOG.debug('Getting metadata for package %s' % package_name)
+              downloadables_pile.spawn(self._get_metadata, package, filename_matches,
+                                       external_links, follow_external_index_pages, stats)
+        while 1:
+           try:
+              package, downloadables = downloadables_pile.next()
+           except StopIteration:
+              break
+           else:
+              if downloadables == []:
+                 pass
+              else:
+                 mirror_package = self.package(package)
+                 for url_basename, url_data in downloadables.items():
+                    results_pile.spawn(self._fetch_downloadable, package, mirror_package,
+                                       url_basename, url_data, verbose, cleanup, create_indexes,
+                                       base_url, package_name, stats, full_list, timestamp)
+                 successes = 0
+                 while 1:
+                    try:
+                       successes += results_pile.next()
+                    except StopIteration:
+                       break
+                 if successes == len(downloadables.keys()):
+                    with open(mirror_package.path("timestamp"), "wb") as f:
+                       f.write(str(timestamp))
+                 if create_indexes:
+                    mirror_package.index_html(base_url)
+                       
+                 
         pool.waitall()
         if create_indexes:
             self.index_html()
