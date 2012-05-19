@@ -382,20 +382,14 @@ class Package(object):
                             external_links=external_links, 
                             follow_external_index_pages=follow_external_index_pages)
         results = dict()
-        for link, md5sum in links:
-            filename = os.path.basename(link)
-            result = results.get(filename, dict())
-            if "links" not in result:
-                result["links"] = []
-            if "md5sum" not in result:
-                result["md5sum"] = None
-            if md5sum:
-                if not result["md5sum"]:
-                    result["md5sum"] = md5sum
-                elif result["md5sum"] != md5sum:
-                    continue 
-            result["links"].append(link)
-            results[filename] = result
+        for link, new_md5sum in links:
+           filename = os.path.basename(link)
+           result = results.setdefault(filename, dict())
+           links = result.setdefault("links", [])
+           if new_md5sum:
+              md5sum = result.setdefault("md5sum", new_md5sum)
+              if md5sum == new_md5sum:
+                 links.append(link)                                                                     
         return results
 
     def _get(self, url, filename, md5_hex=None):
